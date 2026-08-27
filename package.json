@@ -1,0 +1,37 @@
+{
+  "name": "com.mdj.dynamicnpcs",
+  "version": "0.3.3",
+  "displayName": "Dynamic NPCs",
+  "description": "Fully local, voiced NPC dialogue for Unity. An embedded llama-server writes each reply in character and embedded NeuTTS speaks it with a cloned per-NPC voice, streamed sentence-by-sentence so the NPC starts talking before the reply finishes generating. No cloud services, no Python at runtime, nothing for players to install.",
+  "unity": "2021.3",
+  "license": "MIT",
+  "author": {
+    "name": "Martin Johnson",
+    "url": "https://github.com/mdj128"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mdj128/dynamic-npcs.git"
+  },
+  "documentationUrl": "https://github.com/mdj128/dynamic-npcs#readme",
+  "changelogUrl": "https://github.com/mdj128/dynamic-npcs/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/mdj128/dynamic-npcs/blob/main/LICENSE",
+  "keywords": [
+    "npc",
+    "dialogue",
+    "tts",
+    "llm",
+    "voice",
+    "ai",
+    "local",
+    "llama.cpp",
+    "neutts"
+  ],
+  "samples": [
+    {
+      "displayName": "Basic NPC Chat",
+      "description": "A minimal scene script with an on-screen chat box wired to an NpcDialogueAgent.",
+      "path": "Samples~/BasicNpc"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+    "name": "DynamicNpcs.Runtime",
+    "rootNamespace": "DynamicNpcs",
+    "references": [
+        "Unity.Sentis",
+        "Unity.InferenceEngine"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.sentis",
+            "expression": "",
+            "define": "DYNAMICNPCS_SENTIS"
+        },
+        {
+            "name": "com.unity.ai.inference",
+            "expression": "",
+            "define": "DYNAMICNPCS_INFERENCE"
+        }
+    ],
+    "noEngineReferences": false
+}

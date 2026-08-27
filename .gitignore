@@ -1,0 +1,19 @@
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE / build
+.idea/
+.vs/
+.vscode/
+*.csproj
+*.sln
+*.user
+obj/
+
+# Never commit models or binaries - they are developer-supplied and huge
+*.gguf
+*.onnx
+*.exe
+*.dll
+*.wav
