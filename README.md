@@ -39,12 +39,12 @@ baked voice codes ──► NeuTTS (llama-server #2, CPU, --special) ──► s
 https://github.com/mdj128/dynamic-npcs.git
 ```
 
-To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.3.4`
+To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.3.5`
 
 Or add it to `Packages/manifest.json` directly:
 
 ```json
-"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.3.4"
+"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.3.5"
 ```
 
 Git URL installs need [Git](https://git-scm.com/) on your PATH and a restart of Unity if it
@@ -69,7 +69,7 @@ One window drives the whole embedded stack:
 4. **Embedded TTS (NeuTTS)** section:
    - **NeuTTS GGUF**: download from the model page (button provided), then browse to it.
    - **espeak-ng**: one click downloads and unpacks it into `StreamingAssets` (Windows; on macOS/Linux install via brew/apt and set the path). Used for phonemization, as a separate process.
-   - **Inference Engine + codec decoder**: one click installs the inference package (`com.unity.ai.inference`, or `com.unity.sentis` pre-6.1), another downloads the NeuCodec ONNX decoder and assigns it.
+   - **Inference Engine + codec decoder**: one click installs the inference package (`com.unity.ai.inference`, or `com.unity.sentis` pre-6.1), another downloads the NeuCodec ONNX decoder and assigns it. The decoder repo is **gated** (free, but you must accept its terms): open the model page from the window, sign in and accept, then paste a [read access token](https://huggingface.co/settings/tokens) into the *HF Access Token* field before downloading. The token is kept in `EditorPrefs` on your machine, never in the project. If you would rather not use a token, download `model.onnx` in your browser and point the window at it with *Browse for Existing .onnx...*.
    - **Switch settings to Embedded NeuTTS backend.**
 
 Embedded server behavior (both instances): started lazily on first use (warm them from a loading screen via `EmbeddedLlmServer` / `EmbeddedTtsServer.EnsureRunningAsync`), survive editor play-mode restarts (killed when the editor quits), restart automatically when config changes, and adopt an already-running server on their port.
@@ -154,6 +154,7 @@ Full detail, with links and source offers, in [THIRD-PARTY-NOTICES.md](THIRD-PAR
 - **"espeak-ng not found"** — setup window, NeuTTS section (Windows one-click) or install via brew/apt and set the path.
 - **"requires the Unity Inference Engine package"** — install `com.unity.ai.inference` (Unity 6.1+) or `com.unity.sentis` (older), then re-download/reimport the codec ONNX and assign it in settings.
 - **"package has an invalid signature" installing com.unity.sentis** — you're on Unity 6.1+, where Sentis was renamed to Inference Engine; remove `com.unity.sentis` from `Packages/manifest.json` and install `com.unity.ai.inference` instead.
+- **`InvalidProtocolBufferException: Protocol message contained a tag with an invalid wire type`** — the `.onnx` on disk is not a model. The NeuCodec repo is gated, so an unauthenticated download saves Hugging Face's short error page under the `.onnx` name and the importer tries to parse that text as protobuf. Use *Delete Broken File* in the setup window, accept the terms on the model page, and download again with an access token (or browse to a manually downloaded copy). The setup window now validates downloads before they reach your `Assets` folder, so this only affects files fetched by older versions.
 - **"SplitToSequence not supported" importing the codec ONNX** — Unity's ONNX importer doesn't support the sequence ops the upstream export uses for attention `unbind`. Run `Tools~/patch_neucodec_onnx.py` on the downloaded file (one-time, dev machine only: `pip install onnx`; rewrites them to equivalent `Gather` ops — verified bit-exact), then use **Reimport + Reassign Codec Decoder** in the setup window.
 - **"llama-server exited during startup"** — see the log view; usual suspects: corrupt GGUF, not enough VRAM (lower `Gpu Layers`), CUDA build missing cudart.
 - **Voice sounds wrong / robotic** — reference quality matters most: 3–15 s, clean, mono, natural speech, accurate transcript.

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.5] - 2026-08-29
+
+- Fix: the NeuCodec decoder repo on Hugging Face is now gated, so the setup window's
+  download returned a 139-byte "Access to model ... is restricted" body - which
+  `DownloadHandlerFile` wrote straight to `Assets/DynamicNPCs/neucodec-decoder.onnx`.
+  Unity then tried to parse that text as protobuf and threw
+  `InvalidProtocolBufferException: Protocol message contained a tag with an invalid
+  wire type`. Downloads now go to a temp file and are validated (HTTP status, plus a
+  text/size sniff) before anything reaches the Assets folder, so a failed fetch can no
+  longer poison the project.
+- New: optional Hugging Face access token field for the gated download, stored in
+  `EditorPrefs` per machine - never on the settings asset, which would put it in source
+  control. Buttons to open the model page (to accept the terms) and the token page.
+- New: "Browse for Existing .onnx..." to point at a manually downloaded decoder, and
+  "Delete Broken File" for projects already holding an invalid one. Both validate the
+  file first and explain what is wrong in plain terms.
+
 ## [0.3.4] - 2026-08-29
 
 - Fix: the package failed to compile on a fresh install without the Unity Inference

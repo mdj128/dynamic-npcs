@@ -37,6 +37,11 @@ namespace DynamicNpcs.Editor
         private const string EspeakMsiUrl = "https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi";
         private const string CodecAssetPath = "Assets/DynamicNPCs/neucodec-decoder.onnx";
         private const string CodecUrl = "https://huggingface.co/neuphonic/neucodec-onnx-decoder/resolve/main/model.onnx";
+        private const string CodecRepoPage = "https://huggingface.co/neuphonic/neucodec-onnx-decoder";
+        private const string HfTokensPage = "https://huggingface.co/settings/tokens";
+        // Per-machine, per-user. Deliberately NOT stored on the settings asset, which
+        // would put the token in source control.
+        private const string HfTokenPrefKey = "DynamicNpcs.HuggingFaceToken";
         private const string NeuttsGgufPage = "https://huggingface.co/neuphonic/neutts-air-q4-gguf/tree/main";
 
         private DynamicNpcSettings _settings;
@@ -53,8 +58,20 @@ namespace DynamicNpcs.Editor
         private readonly LlmClient _llm = new LlmClient();
         private CancellationTokenSource _cts;
 
+        private string _hfToken = "";
+
+        // Memo for the on-disk codec check, keyed on path/size/mtime so OnGUI does not
+        // reopen a ~750 MB file every repaint.
+        private string _codecCheckedPath;
+        private long _codecCheckedLength;
+        private DateTime _codecCheckedTime;
+        private bool _codecCheckedResult;
+        private string _codecCheckedReason;
+
         [MenuItem("Window/Dynamic NPCs/Embedded Server Setup")]
         private static void Open() => GetWindow<EmbeddedServerSetupWindow>("Embedded LLM Setup");
+
+        private void OnEnable() => _hfToken = EditorPrefs.GetString(HfTokenPrefKey, "");
 
         private void OnDisable() => _cts?.Cancel();
 
@@ -499,14 +516,78 @@ namespace DynamicNpcs.Editor
             }
 
             EditorGUILayout.LabelField("Codec decoder", _settings.neuCodecDecoder == null ? "(not assigned)" : _settings.neuCodecDecoder.name);
-            if (_settings.neuCodecDecoder == null && GUILayout.Button("Download NeuCodec ONNX Decoder (Apache-2.0)"))
-                _ = DownloadCodecAsync();
-            bool codecOnDisk = File.Exists(Path.GetFullPath(CodecAssetPath));
-            if (codecOnDisk && (_settings.neuCodecDecoder == null || _settings.neuCodecDecoder is DefaultAsset))
+
+            string codecFullPath = Path.GetFullPath(CodecAssetPath);
+            bool codecOnDisk = File.Exists(codecFullPath);
+            bool codecUsable = codecOnDisk && CachedLooksLikeOnnx(codecFullPath, out string codecProblem);
+
+            // The model repo is gated on Hugging Face: an unauthenticated fetch returns a
+            // short 401 text body, which older versions happily wrote out as the .onnx and
+            // then failed to import with a protobuf "invalid wire type" exception.
+            if (codecOnDisk && !codecUsable)
             {
                 EditorGUILayout.HelpBox(
-                    "The .onnx file is not imported as an Inference Engine model. If the Console " +
-                    "shows \"SplitToSequence not supported\", run Tools~/patch_neucodec_onnx.py on " +
+                    $"{CodecAssetPath} is not a valid ONNX model - {codecProblem}. This is almost always a " +
+                    "failed download: the NeuCodec repo is gated, so fetching it without accepting " +
+                    "the terms (and without a token) saves the error page instead of the model. " +
+                    "Delete it, then accept the terms and download again below.",
+                    MessageType.Error);
+                if (GUILayout.Button("Delete Broken File"))
+                {
+                    AssetDatabase.DeleteAsset(CodecAssetPath);
+                    AssetDatabase.Refresh();
+                    _codecCheckedPath = null;
+                    _status = "Deleted the invalid " + CodecAssetPath + ".";
+                    Repaint();
+                }
+            }
+
+            if (_settings.neuCodecDecoder == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "The NeuCodec decoder is a gated (but free) Apache-2.0 model. One-time: open the " +
+                    "model page, sign in, and accept the terms; then paste an access token below so " +
+                    "the download can authenticate. Or download model.onnx in the browser and use " +
+                    "'Browse for Existing .onnx...'.",
+                    MessageType.Info);
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Open Model Page (accept terms)"))
+                        Application.OpenURL(CodecRepoPage);
+                    if (GUILayout.Button("Get Access Token"))
+                        Application.OpenURL(HfTokensPage);
+                }
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUI.BeginChangeCheck();
+                    _hfToken = EditorGUILayout.PasswordField("HF Access Token", _hfToken);
+                    if (EditorGUI.EndChangeCheck())
+                        EditorPrefs.SetString(HfTokenPrefKey, _hfToken ?? "");
+                    if (GUILayout.Button("Clear", GUILayout.Width(50)))
+                    {
+                        _hfToken = "";
+                        EditorPrefs.DeleteKey(HfTokenPrefKey);
+                        GUI.FocusControl(null);
+                    }
+                }
+                EditorGUILayout.LabelField(" ", "Stored in EditorPrefs on this machine only - never in the project.", EditorStyles.miniLabel);
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Download NeuCodec ONNX Decoder (Apache-2.0)"))
+                        _ = DownloadCodecAsync();
+                    if (GUILayout.Button("Browse for Existing .onnx..."))
+                        PickCodecOnnx();
+                }
+            }
+
+            if (codecUsable && (_settings.neuCodecDecoder == null || _settings.neuCodecDecoder is DefaultAsset))
+            {
+                EditorGUILayout.HelpBox(
+                    "The .onnx file is on disk but is not imported as an Inference Engine model. If the " +
+                    "Console shows \"SplitToSequence not supported\", run Tools~/patch_neucodec_onnx.py on " +
                     "the file (one-time, dev machine only), then click below. Otherwise install the " +
                     "Inference Engine package above first.",
                     MessageType.Warning);
@@ -555,9 +636,40 @@ namespace DynamicNpcs.Editor
             catch (Exception e) { End("Error: " + e.Message); }
         }
 
+        /// <summary>
+        /// Picks an already-downloaded neucodec model.onnx and copies it into the project.
+        /// The escape hatch for the gated repo: grab the file in a browser, point at it here.
+        /// </summary>
+        private void PickCodecOnnx()
+        {
+            string picked = EditorUtility.OpenFilePanel("Choose the NeuCodec decoder model.onnx", "", "onnx");
+            if (string.IsNullOrEmpty(picked))
+                return;
+
+            if (!LooksLikeOnnx(picked, out string why))
+            {
+                EditorUtility.DisplayDialog("Dynamic NPCs",
+                    $"That file is not a valid ONNX model - {why}.\n\nIf you downloaded it from " +
+                    "Hugging Face while signed out, you saved the gate's error page rather than the " +
+                    "model. Accept the terms on the model page, then download it again.", "OK");
+                return;
+            }
+
+            string fullPath = Path.GetFullPath(CodecAssetPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+            if (File.Exists(fullPath) && !EditorUtility.DisplayDialog("Dynamic NPCs",
+                    CodecAssetPath + " already exists. Overwrite it?", "Overwrite", "Cancel"))
+                return;
+
+            File.Copy(picked, fullPath, true);
+            AssetDatabase.Refresh();
+            AssignCodecAfterImport($"Copied {Path.GetFileName(picked)} into {CodecAssetPath}");
+        }
+
         private async Task DownloadCodecAsync()
         {
             Begin("Downloading NeuCodec ONNX decoder...");
+            string tempPath = Path.Combine(Path.GetTempPath(), "dynamicnpcs-neucodec-decoder.onnx");
             try
             {
                 string fullPath = Path.GetFullPath(CodecAssetPath);
@@ -573,37 +685,129 @@ namespace DynamicNpcs.Editor
                 }
                 Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
 
+                // Download to a temp file first: the repo is gated, and a rejected request
+                // still has a body (the error text), which must never land on the .onnx path
+                // where Unity's ONNX importer would try to parse it as protobuf.
+                long responseCode;
                 using (var req = new UnityWebRequest(CodecUrl, UnityWebRequest.kHttpVerbGET))
                 {
-                    req.downloadHandler = new DownloadHandlerFile(fullPath);
+                    req.downloadHandler = new DownloadHandlerFile(tempPath);
                     req.SetRequestHeader("User-Agent", "DynamicNPCs-Unity");
+                    if (!string.IsNullOrWhiteSpace(_hfToken))
+                        req.SetRequestHeader("Authorization", "Bearer " + _hfToken.Trim());
                     var op = req.SendWebRequest();
                     while (!op.isDone)
                     {
                         EditorUtility.DisplayProgressBar("Dynamic NPCs", "Downloading neucodec decoder", req.downloadProgress);
                         await Task.Yield();
                     }
-                    if (req.result != UnityWebRequest.Result.Success)
+                    responseCode = req.responseCode;
+                    if (req.result != UnityWebRequest.Result.Success && responseCode != 401 && responseCode != 403)
                         throw new Exception($"Download failed: {req.error}");
                 }
 
+                if (responseCode == 401 || responseCode == 403)
+                    throw new Exception(
+                        $"Hugging Face refused the download (HTTP {responseCode}). {CodecRepoPage} is a " +
+                        "gated repo: sign in, accept the terms on the model page, create an access " +
+                        "token with read permission, and paste it into the HF Access Token field. " +
+                        "You can also download model.onnx in the browser and use 'Browse for Existing .onnx...'.");
+
+                if (!LooksLikeOnnx(tempPath, out string why))
+                    throw new Exception(
+                        $"The download is not a valid ONNX model - {why}. This usually means Hugging " +
+                        "Face returned a gate or error page instead of the file. Accept the terms at " +
+                        CodecRepoPage + " and supply an access token, or download it manually and use " +
+                        "'Browse for Existing .onnx...'.");
+
+                File.Copy(tempPath, fullPath, true);
                 AssetDatabase.Refresh();
-                var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(CodecAssetPath);
-                bool imported = asset != null && !(asset is DefaultAsset);
-                if (imported)
-                {
-                    _settings.neuCodecDecoder = asset;
-                    EditorUtility.SetDirty(_settings);
-                    AssetDatabase.SaveAssets();
-                }
-                End(imported
-                    ? $"Codec decoder imported and assigned ({CodecAssetPath})."
-                    : $"Downloaded to {CodecAssetPath}, but it failed to import. If the Console shows " +
-                      "\"SplitToSequence not supported\", run Tools~/patch_neucodec_onnx.py on the file, " +
-                      "then use Reimport + Reassign above; also check the Inference Engine package is installed.");
+                AssignCodecAfterImport($"Downloaded to {CodecAssetPath}");
             }
             catch (Exception e) { End("Error: " + e.Message); }
-            finally { EditorUtility.ClearProgressBar(); }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { /* best-effort temp cleanup */ }
+            }
+        }
+
+        /// <summary>Assigns the freshly imported codec asset to settings, or explains why it did not import.</summary>
+        private void AssignCodecAfterImport(string what)
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(CodecAssetPath);
+            bool imported = asset != null && !(asset is DefaultAsset);
+            if (imported)
+            {
+                _settings.neuCodecDecoder = asset;
+                EditorUtility.SetDirty(_settings);
+                AssetDatabase.SaveAssets();
+            }
+            End(imported
+                ? $"Codec decoder imported and assigned ({CodecAssetPath})."
+                : what + ", but it failed to import. If the Console shows " +
+                  "\"SplitToSequence not supported\", run Tools~/patch_neucodec_onnx.py on the file, " +
+                  "then use Reimport + Reassign above; also check the Inference Engine package is installed.");
+        }
+
+        /// <summary><see cref="LooksLikeOnnx"/>, memoized on path + size + last-write time.</summary>
+        private bool CachedLooksLikeOnnx(string path, out string reason)
+        {
+            var info = new FileInfo(path);
+            if (path != _codecCheckedPath || info.Length != _codecCheckedLength || info.LastWriteTimeUtc != _codecCheckedTime)
+            {
+                _codecCheckedResult = LooksLikeOnnx(path, out _codecCheckedReason);
+                _codecCheckedPath = path;
+                _codecCheckedLength = info.Length;
+                _codecCheckedTime = info.LastWriteTimeUtc;
+            }
+            reason = _codecCheckedReason;
+            return _codecCheckedResult;
+        }
+
+        /// <summary>
+        /// Cheap sanity check that a file is a real ONNX model rather than an HTML/JSON error
+        /// page, a Hugging Face gate response, or a Git LFS pointer saved under an .onnx name.
+        /// Those parse as protobuf garbage and surface as an opaque InvalidProtocolBufferException
+        /// from the importer, so they are worth catching before the file reaches the AssetDatabase.
+        /// </summary>
+        private static bool LooksLikeOnnx(string path, out string reason)
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+            {
+                reason = "the file does not exist";
+                return false;
+            }
+
+            byte[] head = new byte[(int)Math.Min(info.Length, 512)];
+            if (head.Length > 0)
+                using (var fs = File.OpenRead(path))
+                {
+                    int read = fs.Read(head, 0, head.Length);
+                    if (read < head.Length)
+                        Array.Resize(ref head, read);
+                }
+
+            bool isText = head.Length > 0 && head.All(b =>
+                b == 0x09 || b == 0x0A || b == 0x0D || (b >= 0x20 && b <= 0x7E));
+            if (isText)
+            {
+                string text = System.Text.Encoding.UTF8.GetString(head).Trim();
+                if (text.Length > 160) text = text.Substring(0, 160) + "...";
+                reason = $"it is text, not a model: \"{text}\"";
+                return false;
+            }
+
+            // The real decoder is ~750 MB; anything in the kilobytes is a failed transfer.
+            if (info.Length < 1024 * 1024)
+            {
+                reason = $"it is only {info.Length} bytes";
+                return false;
+            }
+
+            reason = null;
+            return true;
         }
 
 #if UNITY_EDITOR_WIN

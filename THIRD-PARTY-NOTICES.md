@@ -8,7 +8,7 @@ If you ship a game with the embedded stack, you are redistributing them and thei
 |---|---|---|---|
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) (`llama-server`) | Runs the dialogue LLM and the NeuTTS backbone | MIT | Downloaded into `StreamingAssets` by the setup window; shippable |
 | [NeuTTS Air](https://huggingface.co/neuphonic/neutts-air) weights | Voice-cloned speech synthesis | Apache-2.0 | Developer-supplied GGUF; shippable |
-| [NeuCodec](https://huggingface.co/neuphonic/neucodec) + its ONNX decoder | Decodes speech codes to audio | Apache-2.0 | Downloaded by the setup window; shippable |
+| [NeuCodec](https://huggingface.co/neuphonic/neucodec) + its [ONNX decoder](https://huggingface.co/neuphonic/neucodec-onnx-decoder) | Decodes speech codes to audio | Apache-2.0 | Downloaded by the setup window; shippable. The decoder repo is **gated** - accept its terms and supply a Hugging Face read token (or download it manually) |
 | Starter voices (`dave`, `jo`) | Ready-made reference voices | Apache-2.0 | Reference codes derived from the samples in the NeuTTS repo; attribution appreciated |
 | [espeak-ng](https://github.com/espeak-ng/espeak-ng) | Grapheme-to-phoneme conversion | **GPL-3.0** | Invoked strictly as a **separate process**, never linked, so it does not encumber your game. If you ship it, include its license text and a source offer/link |
 | [Unity Inference Engine / Sentis](https://docs.unity3d.com/Packages/com.unity.ai.inference@latest) | Runs the codec decoder in-engine | Unity Companion License | Unity package dependency |
