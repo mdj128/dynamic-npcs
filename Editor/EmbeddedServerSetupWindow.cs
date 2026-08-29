@@ -29,7 +29,10 @@ namespace DynamicNpcs.Editor
     /// </summary>
     public class EmbeddedServerSetupWindow : EditorWindow
     {
-        private const string ReleaseApiUrl = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest";
+        // NOT /releases/latest: llama.cpp publishes its binary builds as prereleases, and
+        // GitHub's "latest" skips those - it resolves to a tag carrying no binaries at all.
+        // List recent releases and take the newest one that actually has builds we can use.
+        private const string ReleaseApiUrl = "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=15";
         private const string InstallDirRelative = "DynamicNPCs/llama-server";
         private const string ModelsDirRelative = "DynamicNPCs/models";
 
@@ -322,7 +325,15 @@ namespace DynamicNpcs.Editor
                     await req.SendWebRequest();
                     if (req.result != UnityWebRequest.Result.Success)
                         throw new Exception($"GitHub API request failed: {req.error}");
-                    _release = JsonUtility.FromJson<GitHubRelease>(req.downloadHandler.text);
+                    // JsonUtility cannot parse a top-level array, so wrap it in an object.
+                    var list = JsonUtility.FromJson<GitHubReleaseList>(
+                        "{\"items\":" + req.downloadHandler.text + "}");
+                    _release = (list?.items ?? Array.Empty<GitHubRelease>())
+                        .FirstOrDefault(r => (r.assets ?? Array.Empty<GitHubAsset>()).Any(IsBinaryForCurrentPlatform));
+                    if (_release == null)
+                        throw new Exception(
+                            "none of the recent llama.cpp releases contain a build for this platform - " +
+                            "download llama-server manually and point section 1 at it");
                 }
 
                 _binaryAssets = (_release.assets ?? Array.Empty<GitHubAsset>())
@@ -334,9 +345,7 @@ namespace DynamicNpcs.Editor
                     .ToArray();
                 _selectedAsset = 0;
 
-                End(_binaryAssets.Length > 0
-                    ? $"Found {_binaryAssets.Length} builds for this platform in {_release.tag_name}."
-                    : "No matching builds found for this platform.");
+                End($"Found {_binaryAssets.Length} builds for this platform in {_release.tag_name}.");
             }
             catch (Exception e) { End("Error: " + e.Message); }
         }
@@ -344,15 +353,26 @@ namespace DynamicNpcs.Editor
         private static bool IsBinaryForCurrentPlatform(GitHubAsset a)
         {
             string n = a.name.ToLowerInvariant();
-            if (!n.EndsWith(".zip") || n.Contains("cudart"))
-                return false;
+            if (n.Contains("cudart"))
+                return false; // the CUDA runtime, fetched alongside a cuda build rather than on its own
 #if UNITY_EDITOR_WIN
-            return n.Contains("bin-win") && n.Contains("x64") && !n.Contains("arm64");
+            return n.EndsWith(".zip") && n.Contains("bin-win") && n.Contains("x64") && !n.Contains("arm64");
 #elif UNITY_EDITOR_OSX
-            return n.Contains("bin-macos");
+            // Apple silicon takes the arm64 build; Rosetta-era Intel Macs take x64.
+            return n.EndsWith(".tar.gz") && n.Contains("bin-macos") &&
+                   (SystemInfo.processorType.IndexOf("Apple", StringComparison.OrdinalIgnoreCase) >= 0
+                       ? n.Contains("arm64")
+                       : n.Contains("x64"));
 #else
-            return n.Contains("bin-ubuntu");
+            return n.EndsWith(".tar.gz") && n.Contains("bin-ubuntu") && n.Contains("x64");
 #endif
+        }
+
+        /// <summary>Pulls "cuda-13.3" out of a llama.cpp asset name, or null if it carries no version.</summary>
+        private static string CudaVersionToken(string lowerName)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(lowerName, @"cuda-\d+(\.\d+)?");
+            return m.Success ? m.Value : null;
         }
 
         private static int AssetSortRank(string name)
@@ -378,15 +398,25 @@ namespace DynamicNpcs.Editor
                 string lower = asset.name.ToLowerInvariant();
                 if (lower.Contains("cuda") && _release?.assets != null)
                 {
+                    // Asset names carry the CUDA version and arch, e.g.
+                    // llama-b10682-bin-win-cuda-13.3-x64.zip  ->  cudart-llama-bin-win-cuda-13.3-x64.zip
+                    // Pairing the wrong runtime with a build leaves llama-server unable to start.
+                    string version = CudaVersionToken(lower);
+                    string arch = lower.Contains("arm64") ? "arm64" : "x64";
                     var cudart = _release.assets.FirstOrDefault(x =>
-                        x.name.ToLowerInvariant().Contains("cudart") &&
-                        x.name.ToLowerInvariant().EndsWith(".zip"));
-                    if (cudart != null)
                     {
-                        _status = $"Downloading {cudart.name}...";
-                        Repaint();
-                        await DownloadAndExtractAsync(cudart, installDir);
-                    }
+                        string c = x.name.ToLowerInvariant();
+                        return c.Contains("cudart") && c.Contains(arch) &&
+                               (version == null || c.Contains(version));
+                    });
+                    if (cudart == null)
+                        throw new Exception(
+                            $"no cudart runtime matching {asset.name} was found in {_release.tag_name} - " +
+                            "pick the Vulkan build instead, which needs no extra runtime");
+
+                    _status = $"Downloading {cudart.name}...";
+                    Repaint();
+                    await DownloadAndExtractAsync(cudart, installDir);
                 }
 
                 string exe = FindServerExecutable(installDir);
@@ -424,6 +454,28 @@ namespace DynamicNpcs.Editor
 
             EditorUtility.DisplayProgressBar("Dynamic NPCs", $"Extracting {asset.name}", 1f);
             string installDirFull = Path.GetFullPath(installDir);
+
+            // macOS/Linux builds ship as .tar.gz. Both platforms have bsdtar/GNU tar, and it
+            // preserves the executable bit that ZipArchive would drop anyway.
+            if (asset.name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("tar", $"-xzf \"{zipPath}\" -C \"{installDirFull}\"")
+                {
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                };
+                using (var proc = System.Diagnostics.Process.Start(psi))
+                {
+                    string err = proc.StandardError.ReadToEnd();
+                    proc.WaitForExit();
+                    if (proc.ExitCode != 0)
+                        throw new Exception($"tar failed to extract {asset.name}: {err.Trim()}");
+                }
+                File.Delete(zipPath);
+                return;
+            }
+
             using (var stream = File.OpenRead(zipPath))
             using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
             {
@@ -1200,6 +1252,12 @@ namespace DynamicNpcs.Editor
         {
             public string tag_name;
             public GitHubAsset[] assets;
+        }
+
+        [Serializable]
+        private class GitHubReleaseList
+        {
+            public GitHubRelease[] items;
         }
 
         [Serializable]

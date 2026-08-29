@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.2] - 2026-08-29
+
+- Fix: "No matching builds found for this platform" when downloading the server binary.
+  llama.cpp publishes its binary builds as *prereleases*, and GitHub's `/releases/latest`
+  skips prereleases - it resolved to a tag whose only asset is `nightly-tag.txt`. The
+  setup window now lists recent releases and takes the newest one that actually carries a
+  build for the current platform.
+- Fix: macOS and Linux could never find a build at all - those platforms ship `.tar.gz`
+  while the filter required `.zip`. Both are now matched and extracted with the system
+  `tar`, which also preserves the executable bit that the zip path drops. macOS picks the
+  arm64 build on Apple silicon and x64 otherwise.
+- Fix: llama.cpp now ships one cudart archive per CUDA version and architecture
+  (`cuda-12.4`, `cuda-13.3`, arm64/x64). The old code took the first cudart it saw, which
+  could pair a 13.3 build with the 12.4 runtime and leave llama-server unable to start.
+  The version and arch are now matched against the selected build, with a clear error
+  (suggesting the Vulkan build) if no runtime matches.
+
 ## [0.4.1] - 2026-08-29
 
 - Fix: `error CS0165: Use of unassigned local variable 'codecProblem'` - the setup window
