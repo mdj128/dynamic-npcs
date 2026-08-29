@@ -704,7 +704,10 @@ namespace DynamicNpcs.Editor
 
             string codecFullPath = Path.GetFullPath(CodecAssetPath);
             bool codecOnDisk = File.Exists(codecFullPath);
-            bool codecUsable = codecOnDisk && CachedLooksLikeOnnx(codecFullPath, out string codecProblem);
+            // Declared up front: the out parameter is not definitely assigned when the
+            // && short-circuits on a missing file.
+            string codecProblem = null;
+            bool codecUsable = codecOnDisk && CachedLooksLikeOnnx(codecFullPath, out codecProblem);
 
             // The model repo is gated on Hugging Face: an unauthenticated fetch returns a
             // short 401 text body, which older versions happily wrote out as the .onnx and

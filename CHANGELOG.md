@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1] - 2026-08-29
+
+- Fix: `error CS0165: Use of unassigned local variable 'codecProblem'` - the setup window
+  read an `out` parameter that is not definitely assigned when its `&&` short-circuits on
+  a missing codec file, so the package did not compile on a fresh install.
+
 ## [0.4.0] - 2026-08-29
 
 Setup is now close to point-and-click: nothing to sign up for, nothing to patch by hand,
