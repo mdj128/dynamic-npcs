@@ -39,12 +39,12 @@ baked voice codes ──► NeuTTS (llama-server #2, CPU, --special) ──► s
 https://github.com/mdj128/dynamic-npcs.git
 ```
 
-To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.3.3`
+To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.3.4`
 
 Or add it to `Packages/manifest.json` directly:
 
 ```json
-"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.3.3"
+"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.3.4"
 ```
 
 Git URL installs need [Git](https://git-scm.com/) on your PATH and a restart of Unity if it

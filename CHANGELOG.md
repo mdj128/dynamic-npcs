@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.4] - 2026-08-29
+
+- Fix: the package failed to compile on a fresh install without the Unity Inference
+  Engine / Sentis package - `CodecDebugRunner` used `SentisNeuCodecDecoder` outside the
+  `DYNAMICNPCS_SENTIS || DYNAMICNPCS_INFERENCE` guard that defines it, so
+  `error CS0246: The type or namespace name 'SentisNeuCodecDecoder' could not be found`.
+  The diagnostic now reports the missing package instead of failing the build.
+- Fix: committed the package-root `.meta` files (Runtime, Editor, package.json, README,
+  CHANGELOG, LICENSE, THIRD-PARTY-NOTICES). Git-URL installs are immutable, so Unity
+  cannot generate them and logged "has no meta file, but it's in an immutable folder.
+  The asset will be ignored" for every root entry.
+
 ## [0.3.3] - 2026-08-27
 
 - First public release: the package now lives at

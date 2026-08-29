@@ -1,6 +1,6 @@
 {
   "name": "com.mdj.dynamicnpcs",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "displayName": "Dynamic NPCs",
   "description": "Fully local, voiced NPC dialogue for Unity. An embedded llama-server writes each reply in character and embedded NeuTTS speaks it with a cloned per-NPC voice, streamed sentence-by-sentence so the NPC starts talking before the reply finishes generating. No cloud services, no Python at runtime, nothing for players to install.",
   "unity": "2021.3",

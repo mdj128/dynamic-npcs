@@ -38,6 +38,7 @@ namespace DynamicNpcs.Editor
                 var voice = JsonUtility.FromJson<VoiceReferenceJson>(json);
                 report.AppendLine($"codes: {voice.codes.Length}");
 
+#if DYNAMICNPCS_SENTIS || DYNAMICNPCS_INFERENCE
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 using (var decoder = new SentisNeuCodecDecoder(modelAsset))
                 {
@@ -51,6 +52,12 @@ namespace DynamicNpcs.Editor
                     File.WriteAllBytes(wavPath, WavUtility.FromAudioClip(clip));
                     report.AppendLine($"wav: {wavPath}");
                 }
+#else
+                report.AppendLine(
+                    "SKIPPED: the codec decoder needs the Unity Inference Engine package " +
+                    "(com.unity.ai.inference; named com.unity.sentis before Unity 6.1). " +
+                    "Install it via Window > Dynamic NPCs > Embedded Server Setup, then re-run.");
+#endif
             }
             catch (Exception e)
             {
