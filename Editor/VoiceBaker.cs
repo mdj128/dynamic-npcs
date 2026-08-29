@@ -218,22 +218,17 @@ namespace DynamicNpcs.Editor
         /// </summary>
         private static string Explain(string raw)
         {
+            // Baking loads mirrored encoder weights from disk, so a gated-repo error means
+            // something reached for neuphonic's repos anyway - a stale cached script, or a
+            // neucodec version whose from_pretrained path is being used somewhere new.
             if (raw.Contains("GatedRepoError") || raw.Contains("gated repo") ||
-                raw.Contains("Access to model neuphonic/neucodec is restricted"))
-            {
-                bool haveToken = !string.IsNullOrWhiteSpace(
-                    EditorPrefs.GetString(EmbeddedServerSetupWindow.HfTokenPrefKey, ""));
+                raw.Contains("is restricted"))
                 return
-                    "Baking needs the NeuCodec encoder, and its Hugging Face repo is gated.\n\n" +
-                    "1. Open https://huggingface.co/neuphonic/neucodec, sign in, and accept the terms.\n" +
-                    "2. Create a read token at https://huggingface.co/settings/tokens.\n" +
-                    "3. Paste it into 'HF Access Token' in Window > Dynamic NPCs > Embedded Server Setup.\n\n" +
-                    (haveToken
-                        ? "A token is set, so it was either rejected or the terms have not been accepted " +
-                          "for this account yet. Check step 1 with the same account that issued the token."
-                        : "No token is currently set.") +
-                    "\n\nThe bundled starter voices need none of this - only baking your own does.";
-            }
+                    "Something tried to download from a gated Hugging Face repo. Baking should not " +
+                    "need an account: it loads mirrored encoder weights from disk.\n\n" +
+                    "Delete Library/DynamicNpcs/bake-venv and bake again to rebuild the environment. " +
+                    "If it persists, a Hugging Face read token in the setup window works around it.\n\n" +
+                    raw;
 
             if (raw.Contains("torchao.dtypes.nf4tensor"))
                 return

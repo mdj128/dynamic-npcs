@@ -841,14 +841,15 @@ namespace DynamicNpcs.Editor
                 }
             }
 
-            // c2) Hugging Face account - not needed for the mirrored downloads above, but
-            // baking a custom voice pulls the NeuCodec *encoder*, whose repo is gated.
+            // c2) Hugging Face account - optional. Every model this package needs is
+            // mirrored on its own releases; a token is only for fetching neuphonic's
+            // originals directly, since those repos are gated.
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField("Hugging Face access (custom voices only)", EditorStyles.miniBoldLabel);
+            EditorGUILayout.LabelField("Hugging Face access (optional)", EditorStyles.miniBoldLabel);
             EditorGUILayout.HelpBox(
-                "Only needed to bake your own voice from a recording: that runs the NeuCodec " +
-                "encoder, which is a gated repo. Accept its terms once, paste a read token here, " +
-                "and 'Bake From Sample' can authenticate. The starter voices need none of this.",
+                "Not needed for anything above, or for baking your own voices - all of that uses " +
+                "mirrored models and works with no account. A token only lets you pull Neuphonic's " +
+                "originals directly from their gated repos instead.",
                 MessageType.None);
             using (new EditorGUILayout.HorizontalScope())
             {

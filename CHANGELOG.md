@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0] - 2026-08-29
+
+- **Baking a custom voice no longer needs a Hugging Face account.** The NeuCodec encoder
+  weights (Apache-2.0, ~1.1 GB) are mirrored on this repository's `codec-v1` release and
+  cached under `~/.cache/dynamicnpcs`, shared across projects and verified by SHA-256 on
+  download. Nothing in the package requires an account any more.
+- `NeuCodec.from_pretrained` asserts the model id is one of neuphonic's own (now gated)
+  repos, so there is no supported way to point it elsewhere. The bake script builds the
+  model and loads the checkpoint itself - the same filtered `load_state_dict` upstream
+  performs - against a local file. The only model still pulled from the Hub,
+  `facebook/w2v-bert-2.0`, is ungated.
+- The bake script takes an optional checkpoint path as its 4th argument, and honours
+  `DYNAMICNPCS_NEUCODEC_CKPT`, for anyone who wants to supply their own copy.
+- The HF Access Token field is now labelled optional, because it is: it only fetches
+  Neuphonic's originals directly instead of the mirrors.
+
 ## [0.4.4] - 2026-08-29
 
 - Fix: baking a custom voice failed with `GatedRepoError: 401` - it downloads the NeuCodec

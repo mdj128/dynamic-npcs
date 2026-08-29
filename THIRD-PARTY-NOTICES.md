@@ -42,3 +42,16 @@ the upstream file at any time via *Fetch from upstream Hugging Face* in the setu
 byte-for-byte, Copyright the Neuphonic authors, licensed under the Apache License,
 Version 2.0. It is **unmodified**, and mirrored only because the upstream repo is gated.
 Setup can be pointed at your own copy at any time via *Browse NeuTTS .gguf...*.
+
+`neucodec-encoder.bin`, attached to the same release, is the `pytorch_model.bin` of
+**[neuphonic/neucodec](https://huggingface.co/neuphonic/neucodec)**, Copyright the
+Neuphonic authors, licensed under the Apache License, Version 2.0. It is **unmodified**
+(sha256 `30c3ea13ceeb2de693c56e5e33a1b7e00d44c95dcdd08a4ed0d552d0bf59ebdf`) and is used
+only on developer machines, to bake a custom voice; it never ships in a build.
+
+It is mirrored because that repo became gated, and because `NeuCodec.from_pretrained`
+hard-codes the gated repo id, leaving no supported way to load the encoder from anywhere
+else. Since the gate blocks verification against the original, the copy was taken from an
+ungated third-party mirror and cross-checked against a second, independent mirror: both
+report the same size and the same sha256 as above, and the weights were confirmed to load
+and encode correctly.
