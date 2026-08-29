@@ -28,8 +28,8 @@ namespace DynamicNpcs
     public class DynamicNpcSettings : ScriptableObject
     {
         [Header("LLM backend")]
-        [Tooltip("RemoteServer: use an already-running server (Ollama, LM Studio, ...). EmbeddedLlamaServer: auto-launch a llama-server binary shipped with the game - players install nothing.")]
-        public LlmBackendMode llmBackend = LlmBackendMode.RemoteServer;
+        [Tooltip("EmbeddedLlamaServer (default): auto-launch a llama-server binary shipped with the game - players install nothing. RemoteServer: use an already-running server (Ollama, LM Studio, ...) during development.")]
+        public LlmBackendMode llmBackend = LlmBackendMode.EmbeddedLlamaServer;
 
         [Header("Remote LLM server (any OpenAI-compatible API)")]
         [Tooltip("Ollama: http://localhost:11434/v1 - LM Studio: http://localhost:1234/v1 - llama.cpp server: http://localhost:8080/v1")]
@@ -65,7 +65,7 @@ namespace DynamicNpcs
 
         [Header("TTS backend")]
         [Tooltip("RemoteXtts: the Python XTTS server (dev only). EmbeddedNeuTts: NeuTTS GGUF on an embedded llama-server + Sentis codec - shippable, players install nothing.")]
-        public TtsBackendMode ttsBackend = TtsBackendMode.RemoteXtts;
+        public TtsBackendMode ttsBackend = TtsBackendMode.EmbeddedNeuTts;
 
         [Header("Remote XTTS server")]
         [Tooltip("Base URL of the XTTS server (endpoints /health and /tts).")]
@@ -73,7 +73,7 @@ namespace DynamicNpcs
 
         [Header("Embedded NeuTTS")]
         [Tooltip("NeuTTS backbone GGUF (e.g. neutts-air Q4/Q8). Relative paths resolve under StreamingAssets.")]
-        public string ttsModelPath = "";
+        public string ttsModelPath = "DynamicNPCs/models/neutts-air-Q4_0.gguf";
 
         [Tooltip("Optional separate llama-server binary for TTS. Empty = reuse the LLM's binary.")]
         public string ttsServerPath = "";

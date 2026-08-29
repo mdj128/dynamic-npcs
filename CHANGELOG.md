@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.4.0] - 2026-08-29
+
+Setup is now close to point-and-click: nothing to sign up for, nothing to patch by hand,
+and sensible assets one button away.
+
+- **Both models are mirrored on this repository's `codec-v1` release** - Neuphonic's
+  NeuCodec decoder (already patched for Unity's ONNX importer) and the NeuTTS Air Q4_0
+  backbone (unmodified). Both upstream repos are gated, which made unattended download
+  impossible; now neither needs a Hugging Face account or token. Each download is
+  checksum-verified before it is copied into the project, so a truncated or substituted
+  file fails with a clear message instead of surfacing much later as an importer error.
+- **New "Quick setup" section** at the top of the setup window: a checklist of the six
+  prerequisites, each marked ready or missing, and *Download Everything Missing* to fetch
+  the llama-server binary, the NeuTTS backbone, espeak-ng and the codec decoder in one go.
+  Installing the Inference Engine package stays a separate button - it triggers a domain
+  reload that would interrupt downloads.
+- **New "Create Starter Assets" button**: creates a settings asset, an `NpcVoice` carrying
+  the bundled 'dave' reference, and an `NpcPersona` wired to it, under `Assets/DynamicNPCs`.
+  It is offered directly in the window's empty state, so a fresh project no longer starts
+  with a hunt through the Create menu.
+- **New settings assets default to the embedded backends** for both LLM and TTS, with the
+  TTS model path pre-filled to the mirrored backbone's StreamingAssets location. The
+  remote Ollama/LM Studio and XTTS paths are still there, now as the deliberate opt-out.
+  Existing assets are untouched - a serialized field keeps the value it was saved with.
+- Neuphonic's originals remain one tick away: *Fetch from upstream Hugging Face* for the
+  decoder (gated, token, plus the `patch_neucodec_onnx.py` step) and *Open Upstream Page*
+  for the backbone. See THIRD-PARTY-NOTICES.md for the Apache-2.0 attribution and exactly
+  what was modified.
+
 ## [0.3.5] - 2026-08-29
 
 - Fix: the NeuCodec decoder repo on Hugging Face is now gated, so the setup window's

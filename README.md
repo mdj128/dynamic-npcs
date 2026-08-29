@@ -26,7 +26,7 @@ baked voice codes ──► NeuTTS (llama-server #2, CPU, --special) ──► s
 
 - Unity 2021.3+ (desktop; the embedded servers use `System.Diagnostics.Process`)
 - A GGUF chat model (3–4B at Q4 recommended, e.g. Qwen3-4B / Gemma-3-4B)
-- A NeuTTS backbone GGUF (e.g. `neuphonic/neutts-air-q4-gguf`, ~750M params, realtime on CPU)
+- A NeuTTS backbone GGUF — downloaded for you by the setup window (~503 MB, realtime on CPU)
 - [Unity Inference Engine](https://docs.unity3d.com/Packages/com.unity.ai.inference@latest) (`com.unity.ai.inference` on Unity 6.1+; its former name `com.unity.sentis` on older versions) for codec decoding — the setup window installs the right one for you
 
 ## Installation
@@ -39,12 +39,12 @@ baked voice codes ──► NeuTTS (llama-server #2, CPU, --special) ──► s
 https://github.com/mdj128/dynamic-npcs.git
 ```
 
-To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.3.5`
+To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.4.0`
 
 Or add it to `Packages/manifest.json` directly:
 
 ```json
-"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.3.5"
+"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.4.0"
 ```
 
 Git URL installs need [Git](https://git-scm.com/) on your PATH and a restart of Unity if it
@@ -61,22 +61,47 @@ pick its `package.json`, or point `Packages/manifest.json` at the folder:
 
 ## Setup: Window > Dynamic NPCs > Embedded Server Setup
 
-One window drives the whole embedded stack:
+The window opens on a **checklist** of the six things the embedded stack needs, each marked
+ready or missing. New project, shortest path:
 
-1. **Server binary** — *Fetch Available Builds* lists the latest llama.cpp release; download one into `StreamingAssets` (Vulkan = easy default on any GPU; CUDA = fastest on NVIDIA, cudart fetched automatically; CPU = no GPU use). One binary serves both the LLM and TTS.
-2. **Dialogue GGUF** — *Browse for .gguf...*: reference in place (dev only — e.g. straight out of LM Studio's models folder) or copy into `StreamingAssets` (ships in builds).
-3. **Switch to Embedded backend**, **Start**, **Benchmark** (first-token latency + tok/s).
-4. **Embedded TTS (NeuTTS)** section:
-   - **NeuTTS GGUF**: download from the model page (button provided), then browse to it.
-   - **espeak-ng**: one click downloads and unpacks it into `StreamingAssets` (Windows; on macOS/Linux install via brew/apt and set the path). Used for phonemization, as a separate process.
-   - **Inference Engine + codec decoder**: one click installs the inference package (`com.unity.ai.inference`, or `com.unity.sentis` pre-6.1), another downloads the NeuCodec ONNX decoder and assigns it. The decoder repo is **gated** (free, but you must accept its terms): open the model page from the window, sign in and accept, then paste a [read access token](https://huggingface.co/settings/tokens) into the *HF Access Token* field before downloading. The token is kept in `EditorPrefs` on your machine, never in the project. If you would rather not use a token, download `model.onnx` in your browser and point the window at it with *Browse for Existing .onnx...*.
-   - **Switch settings to Embedded NeuTTS backend.**
+1. **Create Starter Assets** — makes a settings asset, an `NpcVoice` carrying the bundled
+   *dave* reference, and an `NpcPersona` wired to it, all under `Assets/DynamicNPCs`. This
+   is everything an NPC Dialogue Agent needs to exist.
+2. **Install the Inference Engine package** (section 4) if the checklist says it is missing.
+   Do this first: it recompiles the project, which would interrupt any download in flight.
+3. **Download Everything Missing** — fetches the llama-server binary (Vulkan build, which
+   works on any GPU), the NeuTTS backbone, espeak-ng, and the codec decoder. Roughly 1.5 GB.
+   The two models come from [this package's releases](https://github.com/mdj128/dynamic-npcs/releases/tag/codec-v1)
+   with no account or token, and both are checksum-verified on arrival.
+4. **Pick your dialogue GGUF** (section 2) — the one thing not downloaded for you, because
+   the choice of chat model is yours. *Browse for .gguf...* either references it in place
+   (dev only — e.g. straight out of LM Studio's models folder) or copies it into
+   `StreamingAssets` so it ships in builds.
+5. **Start** and **Benchmark** (first-token latency + tok/s).
 
-Embedded server behavior (both instances): started lazily on first use (warm them from a loading screen via `EmbeddedLlmServer` / `EmbeddedTtsServer.EnsureRunningAsync`), survive editor play-mode restarts (killed when the editor quits), restart automatically when config changes, and adopt an already-running server on their port.
+New settings assets default to the embedded backends for both LLM and TTS, so there is
+nothing to switch over.
+
+Prefer to drive it by hand? Every step above is also its own button:
+
+- **Section 1, server binary** — *Fetch Available Builds* lists the latest llama.cpp
+  release. Vulkan is the easy default on any GPU; CUDA is fastest on NVIDIA (cudart fetched
+  automatically); CPU needs no GPU. One binary serves both the LLM and TTS.
+- **Section 4, Embedded TTS (NeuTTS)** — individual buttons for the backbone GGUF,
+  espeak-ng (one-click on Windows; on macOS/Linux install via brew/apt and set the path),
+  the Inference Engine package, and the codec decoder. To use Neuphonic's original decoder
+  instead of the pre-patched mirror, tick *Fetch from upstream Hugging Face*; that repo is
+  gated, so it needs a [read access token](https://huggingface.co/settings/tokens), and the
+  file must then be patched with `Tools~/patch_neucodec_onnx.py` before Unity will import it.
+
+Embedded server behavior (both instances): started lazily on first use (warm them from a
+loading screen via `EmbeddedLlmServer` / `EmbeddedTtsServer.EnsureRunningAsync`), survive
+editor play-mode restarts (killed when the editor quits), restart automatically when config
+changes, and adopt an already-running server on their port.
 
 ### Remote mode (development)
 
-Both backends also have remote modes: point `Llm Base Url` at Ollama (`http://localhost:11434/v1`) / LM Studio (`http://localhost:1234/v1`), and/or `Tts Base Url` at the XTTS server from the `sounds` repo. **XTTS is dev-only**: its weights are non-commercially licensed and it needs Python.
+Both backends also have remote modes, off by default. Set `Llm Backend` to *RemoteServer* and point `Llm Base Url` at Ollama (`http://localhost:11434/v1`) or LM Studio (`http://localhost:1234/v1`); set `Tts Backend` to *RemoteXtts* and point `Tts Base Url` at an XTTS server. **XTTS is dev-only**: its weights are non-commercially licensed and it needs Python.
 
 ## NPC assets
 
@@ -84,7 +109,7 @@ Both backends also have remote modes: point `Llm Base Url` at Ollama (`http://lo
 
 For the **embedded NeuTTS backend**, a voice = baked NeuCodec reference codes + the transcript of the sample:
 
-- Quickest start: the voice inspector has **starter voices** (dave, jo — from the NeuTTS repo, Apache-2.0) you can apply with one click.
+- Quickest start: **Create Starter Assets** in the setup window makes a ready-to-use voice; the voice inspector also has **starter voices** (dave, jo — from the NeuTTS repo, Apache-2.0) you can apply to any voice asset with one click.
 - Custom voices: record 3–15 s of clean, single-speaker speech, set `Sample Transcript` to the exact words spoken (punctuation included), and click **Bake From Sample** in the voice inspector. It needs a Python 3 on the dev machine and handles the rest itself: creates a cached venv under `Library/`, installs `neucodec` (first bake downloads PyTorch + the NeuCodec encoder weights, several minutes; later bakes take seconds), encodes the sample, and applies the codes to the asset. Players never need Python — the baked codes ship as plain data in the asset. (`Tools~/bake_neutts_voice.py` remains available for CLI/CI use, imported via **Import NeuTTS Reference (JSON)**.)
 
 For the **XTTS dev backend**, assign a sample AudioClip (import Load Type = *Decompress On Load*) or an absolute WAV path (WSL path mapping supported).
@@ -145,6 +170,7 @@ Full detail, with links and source offers, in [THIRD-PARTY-NOTICES.md](THIRD-PAR
 | llama.cpp (llama-server) | MIT | Shippable |
 | espeak-ng | **GPL-3.0** | Runs strictly as a separate process (never linked), which keeps your game unencumbered; ship its license text + source link alongside |
 | Starter voices (dave, jo) | Apache-2.0 (neuphonic/neutts samples) | Attribution appreciated |
+| NeuCodec decoder + NeuTTS backbone, mirrored on this repo's releases | Apache-2.0 | Neuphonic's models; the decoder carries an ONNX graph rewrite for Unity's importer, the backbone is unmodified. See the [release notes](https://github.com/mdj128/dynamic-npcs/releases/tag/codec-v1) |
 | XTTS v2 weights | Coqui non-commercial | Dev/prototyping only |
 | Your GGUF chat model | varies | Check its card for redistribution terms |
 
@@ -154,8 +180,8 @@ Full detail, with links and source offers, in [THIRD-PARTY-NOTICES.md](THIRD-PAR
 - **"espeak-ng not found"** — setup window, NeuTTS section (Windows one-click) or install via brew/apt and set the path.
 - **"requires the Unity Inference Engine package"** — install `com.unity.ai.inference` (Unity 6.1+) or `com.unity.sentis` (older), then re-download/reimport the codec ONNX and assign it in settings.
 - **"package has an invalid signature" installing com.unity.sentis** — you're on Unity 6.1+, where Sentis was renamed to Inference Engine; remove `com.unity.sentis` from `Packages/manifest.json` and install `com.unity.ai.inference` instead.
-- **`InvalidProtocolBufferException: Protocol message contained a tag with an invalid wire type`** — the `.onnx` on disk is not a model. The NeuCodec repo is gated, so an unauthenticated download saves Hugging Face's short error page under the `.onnx` name and the importer tries to parse that text as protobuf. Use *Delete Broken File* in the setup window, accept the terms on the model page, and download again with an access token (or browse to a manually downloaded copy). The setup window now validates downloads before they reach your `Assets` folder, so this only affects files fetched by older versions.
-- **"SplitToSequence not supported" importing the codec ONNX** — Unity's ONNX importer doesn't support the sequence ops the upstream export uses for attention `unbind`. Run `Tools~/patch_neucodec_onnx.py` on the downloaded file (one-time, dev machine only: `pip install onnx`; rewrites them to equivalent `Gather` ops — verified bit-exact), then use **Reimport + Reassign Codec Decoder** in the setup window.
+- **`InvalidProtocolBufferException: Protocol message contained a tag with an invalid wire type`** — the `.onnx` on disk is not a model, but Hugging Face's gate page saved under the `.onnx` name by a pre-0.3.5 version of this package. Use *Delete Broken File* in the setup window and download again; the current download needs no account, is validated before it reaches your `Assets` folder, and is checksum-verified.
+- **"SplitToSequence not supported" importing the codec ONNX** — you have Neuphonic's original file; Unity's ONNX importer doesn't support the sequence ops its export uses for attention `unbind`. Either download the pre-patched copy (untick *Fetch from upstream Hugging Face*), or run `Tools~/patch_neucodec_onnx.py` on your file (one-time, dev machine only: `pip install onnx`; rewrites them to equivalent `Gather` ops — verified bit-exact) and use **Reimport + Reassign Codec Decoder**.
 - **"llama-server exited during startup"** — see the log view; usual suspects: corrupt GGUF, not enough VRAM (lower `Gpu Layers`), CUDA build missing cudart.
 - **Voice sounds wrong / robotic** — reference quality matters most: 3–15 s, clean, mono, natural speech, accurate transcript.
 - **Port conflicts** — LLM (8090) and TTS (8091) ports must differ; whatever answers `/health` on a port gets adopted.

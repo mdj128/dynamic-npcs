@@ -36,13 +36,28 @@ namespace DynamicNpcs.Editor
         private const string EspeakDirRelative = "DynamicNPCs/espeak-ng";
         private const string EspeakMsiUrl = "https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi";
         private const string CodecAssetPath = "Assets/DynamicNPCs/neucodec-decoder.onnx";
-        private const string CodecUrl = "https://huggingface.co/neuphonic/neucodec-onnx-decoder/resolve/main/model.onnx";
+        // Neuphonic's decoder, Apache-2.0, with the SplitToSequence/SequenceAt pairs
+        // rewritten to Gather so Unity's ONNX importer accepts it. Mirrored on this
+        // package's releases because the upstream repo is gated and the upstream file
+        // needs patching before Unity can load it either way.
+        private const string CodecUrl = "https://github.com/mdj128/dynamic-npcs/releases/download/codec-v1/neucodec-decoder-unity.onnx";
+        private const long CodecSizeBytes = 782465015L;
+        private const string CodecSha256 = "d1147333ee3ef2fae0ad82a0530a8ee0f06ea67418f1d8bbf5046e73f4505659";
+        private const string CodecReleasePage = "https://github.com/mdj128/dynamic-npcs/releases/tag/codec-v1";
+        private const string CodecUpstreamUrl = "https://huggingface.co/neuphonic/neucodec-onnx-decoder/resolve/main/model.onnx";
         private const string CodecRepoPage = "https://huggingface.co/neuphonic/neucodec-onnx-decoder";
         private const string HfTokensPage = "https://huggingface.co/settings/tokens";
         // Per-machine, per-user. Deliberately NOT stored on the settings asset, which
         // would put the token in source control.
         private const string HfTokenPrefKey = "DynamicNpcs.HuggingFaceToken";
         private const string NeuttsGgufPage = "https://huggingface.co/neuphonic/neutts-air-q4-gguf/tree/main";
+        // Neuphonic's NeuTTS Air Q4_0 backbone, Apache-2.0, mirrored unmodified so setup
+        // needs no Hugging Face account (that repo is gated too).
+        private const string TtsGgufUrl = "https://github.com/mdj128/dynamic-npcs/releases/download/codec-v1/neutts-air-Q4_0.gguf";
+        private const string TtsGgufSha256 = "bf66dc21b7588fe720cbdfeac1595e7b7c780515f8d8f1ff9a29062e4ac9119e";
+        private const string TtsGgufRelative = "DynamicNPCs/models/neutts-air-Q4_0.gguf";
+        private const string StarterAssetsFolder = "Assets/DynamicNPCs";
+        private const string DaveStarterJson = "Packages/com.mdj.dynamicnpcs/Editor/StarterVoices/dave.json";
 
         private DynamicNpcSettings _settings;
         private string _status = "Idle";
@@ -59,6 +74,7 @@ namespace DynamicNpcs.Editor
         private CancellationTokenSource _cts;
 
         private string _hfToken = "";
+        private bool _codecUseUpstream;
 
         // Memo for the on-disk codec check, keyed on path/size/mtime so OnGUI does not
         // reopen a ~750 MB file every repaint.
@@ -81,13 +97,20 @@ namespace DynamicNpcs.Editor
             _settings = (DynamicNpcSettings)EditorGUILayout.ObjectField("Settings", _settings, typeof(DynamicNpcSettings), false);
             if (_settings == null)
             {
-                EditorGUILayout.HelpBox("Assign a DynamicNpcSettings asset (Assets > Create > Dynamic NPCs > Settings).", MessageType.Info);
+                EditorGUILayout.HelpBox(
+                    "No settings assigned. 'Create Starter Assets' makes a settings asset, a voice " +
+                    "using the bundled 'dave' reference, and a persona wired to it - everything an " +
+                    "NPC Dialogue Agent needs.",
+                    MessageType.Info);
+                if (GUILayout.Button("Create Starter Assets"))
+                    CreateStarterAssets();
                 return;
             }
 
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
             using (new EditorGUI.DisabledScope(_busy))
             {
+                DrawQuickSetupSection();
                 DrawBinarySection();
                 DrawModelSection();
                 DrawBackendSection();
@@ -99,6 +122,160 @@ namespace DynamicNpcs.Editor
 
             EditorGUILayout.Space(6);
             EditorGUILayout.HelpBox(_status, _busy ? MessageType.Info : MessageType.None);
+        }
+
+        // --- 0. quick setup ---
+
+        /// <summary>
+        /// A single checklist of everything the embedded stack needs, so the state of a
+        /// half-finished setup is visible at a glance rather than spread over four sections.
+        /// </summary>
+        private void DrawQuickSetupSection()
+        {
+            EditorGUILayout.Space(8);
+            EditorGUILayout.LabelField("0. Quick setup", EditorStyles.boldLabel);
+
+            bool haveServer = File.Exists(DynamicNpcPaths.ResolveExecutable(_settings.llamaServerPath) ?? "");
+            bool haveChatModel = !string.IsNullOrWhiteSpace(_settings.llmModelPath) &&
+                                 File.Exists(DynamicNpcPaths.Resolve(_settings.llmModelPath) ?? "");
+            bool haveTtsModel = !string.IsNullOrWhiteSpace(_settings.ttsModelPath) &&
+                                File.Exists(DynamicNpcPaths.Resolve(_settings.ttsModelPath) ?? "");
+            bool haveEspeak = File.Exists(DynamicNpcPaths.ResolveExecutable(_settings.espeakPath) ?? "");
+            bool haveInference =
+                Type.GetType("Unity.InferenceEngine.ModelAsset, Unity.InferenceEngine") != null ||
+                Type.GetType("Unity.Sentis.ModelAsset, Unity.Sentis") != null;
+            bool haveCodec = _settings.neuCodecDecoder != null && !(_settings.neuCodecDecoder is DefaultAsset);
+
+            Row("llama-server binary", haveServer, "section 1");
+            Row("Dialogue GGUF (yours)", haveChatModel, "section 2");
+            Row("Inference Engine package", haveInference, "section 4");
+            Row("NeuTTS backbone GGUF", haveTtsModel, "section 4");
+            Row("espeak-ng", haveEspeak, "section 4");
+            Row("NeuCodec decoder", haveCodec, "section 4");
+
+            int done = (haveServer ? 1 : 0) + (haveChatModel ? 1 : 0) + (haveInference ? 1 : 0) +
+                       (haveTtsModel ? 1 : 0) + (haveEspeak ? 1 : 0) + (haveCodec ? 1 : 0);
+            if (done == 6)
+                EditorGUILayout.HelpBox("Everything is in place. Start the servers below, or use the Test Console.", MessageType.Info);
+            else if (!haveInference)
+                EditorGUILayout.HelpBox(
+                    "Install the Inference Engine package first (section 4). It recompiles the project, " +
+                    "which would interrupt the other downloads.",
+                    MessageType.Warning);
+            else
+                EditorGUILayout.HelpBox(
+                    "'Download Everything Missing' fetches the llama-server binary, the NeuTTS backbone, " +
+                    "espeak-ng and the codec decoder - roughly 1.5 GB in total. The dialogue GGUF is " +
+                    "yours to choose and is not downloaded.",
+                    MessageType.None);
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUI.DisabledScope(!haveInference || done == 6))
+                    if (GUILayout.Button("Download Everything Missing"))
+                        _ = RunQuickSetupAsync();
+                if (GUILayout.Button("Create Starter Assets"))
+                    CreateStarterAssets();
+            }
+
+            void Row(string label, bool ok, string where)
+            {
+                EditorGUILayout.LabelField(
+                    (ok ? "\u2713  " : "\u2717  ") + label,
+                    ok ? "ready" : "missing - " + where);
+            }
+        }
+
+        /// <summary>
+        /// Runs the download steps back to back. Deliberately excludes installing the
+        /// Inference Engine package: that triggers a domain reload, which would tear down
+        /// this async chain part-way through.
+        /// </summary>
+        private async Task RunQuickSetupAsync()
+        {
+            try
+            {
+                if (!File.Exists(DynamicNpcPaths.ResolveExecutable(_settings.llamaServerPath) ?? ""))
+                {
+                    await FetchReleaseAsync();
+                    if (_binaryAssets.Length == 0)
+                        throw new Exception("could not list llama.cpp builds - use section 1 manually");
+                    await DownloadBinaryAsync(_binaryAssets[Mathf.Clamp(_selectedAsset, 0, _binaryAssets.Length - 1)]);
+                }
+
+                if (string.IsNullOrWhiteSpace(_settings.ttsModelPath) ||
+                    !File.Exists(DynamicNpcPaths.Resolve(_settings.ttsModelPath) ?? ""))
+                    await DownloadTtsGgufAsync();
+
+#if UNITY_EDITOR_WIN
+                if (!File.Exists(DynamicNpcPaths.ResolveExecutable(_settings.espeakPath) ?? ""))
+                    await InstallEspeakAsync();
+#endif
+
+                if (_settings.neuCodecDecoder == null || _settings.neuCodecDecoder is DefaultAsset)
+                    await DownloadCodecAsync();
+
+                End("Quick setup finished. Pick a dialogue GGUF in section 2 if you have not yet.");
+            }
+            catch (Exception e) { End("Quick setup stopped: " + e.Message); }
+        }
+
+        /// <summary>
+        /// Creates the three assets an NPC needs, already wired together: settings (embedded
+        /// backends), a voice carrying the bundled 'dave' reference codes, and a persona.
+        /// </summary>
+        private void CreateStarterAssets()
+        {
+            if (!AssetDatabase.IsValidFolder(StarterAssetsFolder))
+                AssetDatabase.CreateFolder("Assets", "DynamicNPCs");
+
+            var settings = _settings;
+            if (settings == null)
+            {
+                settings = ScriptableObject.CreateInstance<DynamicNpcSettings>();
+                AssetDatabase.CreateAsset(settings, AssetDatabase.GenerateUniqueAssetPath(
+                    StarterAssetsFolder + "/DynamicNpcSettings.asset"));
+                _settings = settings;
+            }
+
+            var voice = ScriptableObject.CreateInstance<NpcVoice>();
+            voice.displayName = "Dave";
+            voice.language = "en";
+            string davePath = Path.GetFullPath(DaveStarterJson);
+            if (File.Exists(davePath))
+            {
+                var data = JsonUtility.FromJson<StarterVoiceJson>(File.ReadAllText(davePath));
+                if (data?.codes != null)
+                {
+                    voice.neuttsRefCodes = data.codes;
+                    voice.sampleTranscript = (data.transcript ?? "").Trim();
+                }
+            }
+            AssetDatabase.CreateAsset(voice, AssetDatabase.GenerateUniqueAssetPath(
+                StarterAssetsFolder + "/DaveVoice.asset"));
+
+            var persona = ScriptableObject.CreateInstance<NpcPersona>();
+            persona.npcName = "Villager";
+            persona.voice = voice;
+            AssetDatabase.CreateAsset(persona, AssetDatabase.GenerateUniqueAssetPath(
+                StarterAssetsFolder + "/VillagerPersona.asset"));
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            EditorGUIUtility.PingObject(persona);
+            Selection.activeObject = persona;
+
+            _status = voice.HasNeuttsReference
+                ? $"Created settings, voice and persona in {StarterAssetsFolder}. Add an NPC Dialogue Agent to a GameObject and assign them."
+                : $"Created assets in {StarterAssetsFolder}, but the bundled 'dave' reference was not found - apply a starter voice in the voice inspector.";
+        }
+
+        [Serializable]
+        private class StarterVoiceJson
+        {
+            public string name;
+            public string transcript;
+            public int[] codes;
         }
 
         // --- 1. server binary ---
@@ -476,11 +653,19 @@ namespace DynamicNpcs.Editor
             EditorGUILayout.LabelField("NeuTTS GGUF", string.IsNullOrWhiteSpace(_settings.ttsModelPath) ? "(not set)" : _settings.ttsModelPath + (ttsModelExists ? "" : "  [missing]"));
             using (new EditorGUILayout.HorizontalScope())
             {
+                if (!ttsModelExists && GUILayout.Button("Download NeuTTS Backbone (503 MB)"))
+                    _ = DownloadTtsGgufAsync();
                 if (GUILayout.Button("Browse NeuTTS .gguf..."))
                     PickGguf("Choose the NeuTTS backbone GGUF", p => _settings.ttsModelPath = p);
-                if (GUILayout.Button("Open Download Page"))
+                if (GUILayout.Button("Open Upstream Page"))
                     Application.OpenURL(NeuttsGgufPage);
             }
+            if (!ttsModelExists)
+                EditorGUILayout.HelpBox(
+                    "Downloads Neuphonic's NeuTTS Air Q4_0 backbone (Apache-2.0) into StreamingAssets " +
+                    "so it ships with your build. Mirrored on this package's releases - no Hugging " +
+                    "Face account needed - and checksum-verified.",
+                    MessageType.None);
 
             // b) phonemizer
             string espeak = DynamicNpcPaths.ResolveExecutable(_settings.espeakPath);
@@ -527,10 +712,10 @@ namespace DynamicNpcs.Editor
             if (codecOnDisk && !codecUsable)
             {
                 EditorGUILayout.HelpBox(
-                    $"{CodecAssetPath} is not a valid ONNX model - {codecProblem}. This is almost always a " +
-                    "failed download: the NeuCodec repo is gated, so fetching it without accepting " +
-                    "the terms (and without a token) saves the error page instead of the model. " +
-                    "Delete it, then accept the terms and download again below.",
+                    $"{CodecAssetPath} is not a valid ONNX model - {codecProblem}. This is almost always " +
+                    "a failed download - most often an older version of this package saving Hugging " +
+                    "Face's gate page under the .onnx name. Delete it and download again below; the " +
+                    "current download needs no account and is checksum-verified.",
                     MessageType.Error);
                 if (GUILayout.Button("Delete Broken File"))
                 {
@@ -544,52 +729,73 @@ namespace DynamicNpcs.Editor
 
             if (_settings.neuCodecDecoder == null)
             {
-                EditorGUILayout.HelpBox(
-                    "The NeuCodec decoder is a gated (but free) Apache-2.0 model. One-time: open the " +
-                    "model page, sign in, and accept the terms; then paste an access token below so " +
-                    "the download can authenticate. Or download model.onnx in the browser and use " +
-                    "'Browse for Existing .onnx...'.",
-                    MessageType.Info);
-
-                using (new EditorGUILayout.HorizontalScope())
+                if (!_codecUseUpstream)
                 {
-                    if (GUILayout.Button("Open Model Page (accept terms)"))
-                        Application.OpenURL(CodecRepoPage);
-                    if (GUILayout.Button("Get Access Token"))
-                        Application.OpenURL(HfTokensPage);
+                    EditorGUILayout.HelpBox(
+                        "Downloads Neuphonic's NeuCodec decoder (Apache-2.0, ~746 MB) from this " +
+                        "package's releases, already patched for Unity's ONNX importer. No account " +
+                        "or token needed, and the file is checksum-verified after download.",
+                        MessageType.Info);
                 }
-
-                using (new EditorGUILayout.HorizontalScope())
+                else
                 {
-                    EditorGUI.BeginChangeCheck();
-                    _hfToken = EditorGUILayout.PasswordField("HF Access Token", _hfToken);
-                    if (EditorGUI.EndChangeCheck())
-                        EditorPrefs.SetString(HfTokenPrefKey, _hfToken ?? "");
-                    if (GUILayout.Button("Clear", GUILayout.Width(50)))
+                    EditorGUILayout.HelpBox(
+                        "Upstream is a gated repo: sign in, accept the terms on the model page, and " +
+                        "paste a read access token below. The upstream file also needs patching with " +
+                        "Tools~/patch_neucodec_onnx.py before Unity can import it.",
+                        MessageType.Warning);
+
+                    using (new EditorGUILayout.HorizontalScope())
                     {
-                        _hfToken = "";
-                        EditorPrefs.DeleteKey(HfTokenPrefKey);
-                        GUI.FocusControl(null);
+                        if (GUILayout.Button("Open Model Page (accept terms)"))
+                            Application.OpenURL(CodecRepoPage);
+                        if (GUILayout.Button("Get Access Token"))
+                            Application.OpenURL(HfTokensPage);
                     }
+
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        EditorGUI.BeginChangeCheck();
+                        _hfToken = EditorGUILayout.PasswordField("HF Access Token", _hfToken);
+                        if (EditorGUI.EndChangeCheck())
+                            EditorPrefs.SetString(HfTokenPrefKey, _hfToken ?? "");
+                        if (GUILayout.Button("Clear", GUILayout.Width(50)))
+                        {
+                            _hfToken = "";
+                            EditorPrefs.DeleteKey(HfTokenPrefKey);
+                            GUI.FocusControl(null);
+                        }
+                    }
+                    EditorGUILayout.LabelField(" ", "Stored in EditorPrefs on this machine only - never in the project.", EditorStyles.miniLabel);
                 }
-                EditorGUILayout.LabelField(" ", "Stored in EditorPrefs on this machine only - never in the project.", EditorStyles.miniLabel);
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button("Download NeuCodec ONNX Decoder (Apache-2.0)"))
+                    if (GUILayout.Button(_codecUseUpstream
+                            ? "Download from Hugging Face (unpatched)"
+                            : "Download NeuCodec ONNX Decoder (Apache-2.0)"))
                         _ = DownloadCodecAsync();
                     if (GUILayout.Button("Browse for Existing .onnx..."))
                         PickCodecOnnx();
+                }
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    _codecUseUpstream = EditorGUILayout.ToggleLeft(
+                        "Fetch from upstream Hugging Face instead", _codecUseUpstream);
+                    if (GUILayout.Button("What is this file?", GUILayout.Width(130)))
+                        Application.OpenURL(_codecUseUpstream ? CodecRepoPage : CodecReleasePage);
                 }
             }
 
             if (codecUsable && (_settings.neuCodecDecoder == null || _settings.neuCodecDecoder is DefaultAsset))
             {
                 EditorGUILayout.HelpBox(
-                    "The .onnx file is on disk but is not imported as an Inference Engine model. If the " +
-                    "Console shows \"SplitToSequence not supported\", run Tools~/patch_neucodec_onnx.py on " +
-                    "the file (one-time, dev machine only), then click below. Otherwise install the " +
-                    "Inference Engine package above first.",
+                    "The .onnx file is on disk but is not imported as an Inference Engine model. Usually " +
+                    "the Inference Engine package above is missing - install it, then click below. If the " +
+                    "Console shows \"SplitToSequence not supported\" this is an unpatched upstream file: " +
+                    "run Tools~/patch_neucodec_onnx.py on it (one-time, dev machine only) or re-download " +
+                    "the pre-patched copy.",
                     MessageType.Warning);
                 if (GUILayout.Button("Reimport + Reassign Codec Decoder"))
                 {
@@ -688,12 +894,13 @@ namespace DynamicNpcs.Editor
                 // Download to a temp file first: the repo is gated, and a rejected request
                 // still has a body (the error text), which must never land on the .onnx path
                 // where Unity's ONNX importer would try to parse it as protobuf.
+                string url = _codecUseUpstream ? CodecUpstreamUrl : CodecUrl;
                 long responseCode;
-                using (var req = new UnityWebRequest(CodecUrl, UnityWebRequest.kHttpVerbGET))
+                using (var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbGET))
                 {
                     req.downloadHandler = new DownloadHandlerFile(tempPath);
                     req.SetRequestHeader("User-Agent", "DynamicNPCs-Unity");
-                    if (!string.IsNullOrWhiteSpace(_hfToken))
+                    if (_codecUseUpstream && !string.IsNullOrWhiteSpace(_hfToken))
                         req.SetRequestHeader("Authorization", "Bearer " + _hfToken.Trim());
                     var op = req.SendWebRequest();
                     while (!op.isDone)
@@ -715,10 +922,24 @@ namespace DynamicNpcs.Editor
 
                 if (!LooksLikeOnnx(tempPath, out string why))
                     throw new Exception(
-                        $"The download is not a valid ONNX model - {why}. This usually means Hugging " +
-                        "Face returned a gate or error page instead of the file. Accept the terms at " +
-                        CodecRepoPage + " and supply an access token, or download it manually and use " +
-                        "'Browse for Existing .onnx...'.");
+                        $"The download is not a valid ONNX model - {why}. " + (_codecUseUpstream
+                            ? "This usually means Hugging Face returned a gate or error page instead of " +
+                              "the file. Accept the terms at " + CodecRepoPage + " and supply an access token."
+                            : "The download may have been interrupted - try again.") +
+                        " You can also download the file in a browser and use 'Browse for Existing .onnx...'.");
+
+                // The mirrored file is a known, fixed artifact, so verify it. A truncated or
+                // substituted download should fail here rather than as an importer error later.
+                if (!_codecUseUpstream)
+                {
+                    EditorUtility.DisplayProgressBar("Dynamic NPCs", "Verifying checksum...", 1f);
+                    string actual = Sha256(tempPath);
+                    if (!string.Equals(actual, CodecSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new Exception(
+                            "The downloaded decoder does not match its expected checksum and was " +
+                            $"discarded.\nexpected {CodecSha256}\nactual   {actual}\n" +
+                            "Try again; if it keeps failing, report it at " + CodecReleasePage);
+                }
 
                 File.Copy(tempPath, fullPath, true);
                 AssetDatabase.Refresh();
@@ -748,6 +969,72 @@ namespace DynamicNpcs.Editor
                 : what + ", but it failed to import. If the Console shows " +
                   "\"SplitToSequence not supported\", run Tools~/patch_neucodec_onnx.py on the file, " +
                   "then use Reimport + Reassign above; also check the Inference Engine package is installed.");
+        }
+
+        /// <summary>
+        /// Fetches the mirrored NeuTTS backbone into StreamingAssets. Same shape as the codec
+        /// download: temp file, status check, checksum, then move into place.
+        /// </summary>
+        private async Task DownloadTtsGgufAsync()
+        {
+            Begin("Downloading NeuTTS backbone GGUF...");
+            string tempPath = Path.Combine(Path.GetTempPath(), "dynamicnpcs-neutts-air-Q4_0.gguf");
+            try
+            {
+                string dest = Path.Combine(Application.streamingAssetsPath,
+                    TtsGgufRelative.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(dest));
+
+                using (var req = new UnityWebRequest(TtsGgufUrl, UnityWebRequest.kHttpVerbGET))
+                {
+                    req.downloadHandler = new DownloadHandlerFile(tempPath);
+                    req.SetRequestHeader("User-Agent", "DynamicNPCs-Unity");
+                    var op = req.SendWebRequest();
+                    while (!op.isDone)
+                    {
+                        EditorUtility.DisplayProgressBar("Dynamic NPCs",
+                            $"Downloading NeuTTS backbone ({req.downloadedBytes / (1024 * 1024)} MB)", req.downloadProgress);
+                        await Task.Yield();
+                    }
+                    if (req.result != UnityWebRequest.Result.Success)
+                        throw new Exception($"Download failed: {req.error}");
+                }
+
+                // A GGUF starts with the magic "GGUF"; anything else is an error page.
+                using (var fs = File.OpenRead(tempPath))
+                {
+                    var magic = new byte[4];
+                    if (fs.Read(magic, 0, 4) != 4 || System.Text.Encoding.ASCII.GetString(magic) != "GGUF")
+                        throw new Exception("the download is not a GGUF file - it may have been interrupted; try again");
+                }
+
+                EditorUtility.DisplayProgressBar("Dynamic NPCs", "Verifying checksum...", 1f);
+                string actual = Sha256(tempPath);
+                if (!string.Equals(actual, TtsGgufSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new Exception(
+                        "The downloaded backbone does not match its expected checksum and was " +
+                        $"discarded.\nexpected {TtsGgufSha256}\nactual   {actual}");
+
+                File.Copy(tempPath, dest, true);
+                _settings.ttsModelPath = TtsGgufRelative;
+                EditorUtility.SetDirty(_settings);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+                End($"NeuTTS backbone downloaded to StreamingAssets/{TtsGgufRelative}.");
+            }
+            catch (Exception e) { End("Error: " + e.Message); }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+                try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { /* best-effort temp cleanup */ }
+            }
+        }
+
+        private static string Sha256(string path)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            using (var fs = File.OpenRead(path))
+                return BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
         }
 
         /// <summary><see cref="LooksLikeOnnx"/>, memoized on path + size + last-write time.</summary>
