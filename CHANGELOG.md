@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.4] - 2026-08-29
+
+- Fix: baking a custom voice failed with `GatedRepoError: 401` - it downloads the NeuCodec
+  *encoder*, and that repo is gated like the others. The bake now passes the HF access
+  token from the setup window to Python as `HF_TOKEN` / `HUGGING_FACE_HUB_TOKEN`, per
+  process, so it neither touches a global `hf auth login` nor writes the token to disk.
+- The HF Access Token field is no longer hidden behind the *Fetch from upstream* toggle -
+  it has its own section, explaining that it is needed only for baking your own voices.
+  The mirrored downloads and the bundled starter voices still need no account at all.
+- Bake failures now explain themselves: the gated-repo error spells out the accept-terms
+  and token steps (and whether a token is currently set) instead of surfacing a raw Python
+  traceback, and a stale-`torchao` failure points at the venv to delete.
+
 ## [0.4.3] - 2026-08-29
 
 - Fix: voice baking failed with `ModuleNotFoundError: No module named

@@ -39,12 +39,12 @@ baked voice codes ──► NeuTTS (llama-server #2, CPU, --special) ──► s
 https://github.com/mdj128/dynamic-npcs.git
 ```
 
-To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.4.3`
+To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.4.4`
 
 Or add it to `Packages/manifest.json` directly:
 
 ```json
-"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.4.3"
+"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.4.4"
 ```
 
 Git URL installs need [Git](https://git-scm.com/) on your PATH and a restart of Unity if it
@@ -110,7 +110,7 @@ Both backends also have remote modes, off by default. Set `Llm Backend` to *Remo
 For the **embedded NeuTTS backend**, a voice = baked NeuCodec reference codes + the transcript of the sample:
 
 - Quickest start: **Create Starter Assets** in the setup window makes a ready-to-use voice; the voice inspector also has **starter voices** (dave, jo — from the NeuTTS repo, Apache-2.0) you can apply to any voice asset with one click.
-- Custom voices: record 3–15 s of clean, single-speaker speech, set `Sample Transcript` to the exact words spoken (punctuation included), and click **Bake From Sample** in the voice inspector. It needs a Python 3 on the dev machine and handles the rest itself: creates a cached venv under `Library/`, installs `neucodec` (first bake downloads PyTorch + the NeuCodec encoder weights, several minutes; later bakes take seconds), encodes the sample, and applies the codes to the asset. Players never need Python — the baked codes ship as plain data in the asset. (`Tools~/bake_neutts_voice.py` remains available for CLI/CI use, imported via **Import NeuTTS Reference (JSON)**.)
+- Custom voices: record 3–15 s of clean, single-speaker speech, set `Sample Transcript` to the exact words spoken (punctuation included), and click **Bake From Sample** in the voice inspector. Baking runs the NeuCodec **encoder**, whose Hugging Face repo is gated: accept the terms at [neuphonic/neucodec](https://huggingface.co/neuphonic/neucodec) once, then paste a [read token](https://huggingface.co/settings/tokens) into *HF Access Token* in the setup window. (Starter voices need none of this — the gate only affects baking your own.) It needs a Python 3 on the dev machine and handles the rest itself: creates a cached venv under `Library/`, installs `neucodec` (first bake downloads PyTorch + the NeuCodec encoder weights, several minutes; later bakes take seconds), encodes the sample, and applies the codes to the asset. Players never need Python — the baked codes ship as plain data in the asset. (`Tools~/bake_neutts_voice.py` remains available for CLI/CI use, imported via **Import NeuTTS Reference (JSON)**.)
 
 For the **XTTS dev backend**, assign a sample AudioClip (import Load Type = *Decompress On Load*) or an absolute WAV path (WSL path mapping supported).
 
@@ -183,6 +183,7 @@ Full detail, with links and source offers, in [THIRD-PARTY-NOTICES.md](THIRD-PAR
 - **`InvalidProtocolBufferException: Protocol message contained a tag with an invalid wire type`** — the `.onnx` on disk is not a model, but Hugging Face's gate page saved under the `.onnx` name by a pre-0.3.5 version of this package. Use *Delete Broken File* in the setup window and download again; the current download needs no account, is validated before it reaches your `Assets` folder, and is checksum-verified.
 - **"SplitToSequence not supported" importing the codec ONNX** — you have Neuphonic's original file; Unity's ONNX importer doesn't support the sequence ops its export uses for attention `unbind`. Either download the pre-patched copy (untick *Fetch from upstream Hugging Face*), or run `Tools~/patch_neucodec_onnx.py` on your file (one-time, dev machine only: `pip install onnx`; rewrites them to equivalent `Gather` ops — verified bit-exact) and use **Reimport + Reassign Codec Decoder**.
 - **"llama-server exited during startup"** — see the log view; usual suspects: corrupt GGUF, not enough VRAM (lower `Gpu Layers`), CUDA build missing cudart.
+- **Bake fails with `GatedRepoError: 401` / "Access to model neuphonic/neucodec is restricted"** — baking downloads the NeuCodec encoder from a gated repo. Accept the terms at [neuphonic/neucodec](https://huggingface.co/neuphonic/neucodec) while signed in, create a [read token](https://huggingface.co/settings/tokens), and paste it into *HF Access Token* in the setup window; the bake passes it to Python as `HF_TOKEN`. If a token is already set, make sure the terms were accepted by the same account that issued it.
 - **Bake fails with `ModuleNotFoundError: No module named 'torchao.dtypes.nf4tensor'`** — a dependency conflict in the bake venv: `neucodec` requires `torchao>=0.12` with no upper bound, and 0.18 moved `NF4Tensor` out of `torchao.dtypes`, where `torchtune` still looks for it. 0.4.3+ pins `torchao<0.18`; an already-broken venv repairs itself on the next bake (the import check fails, so the pinned install re-runs). To force a clean rebuild, delete `Library/DynamicNpcs/bake-venv`.
 - **Voice sounds wrong / robotic** — reference quality matters most: 3–15 s, clean, mono, natural speech, accurate transcript.
 - **Port conflicts** — LLM (8090) and TTS (8091) ports must differ; whatever answers `/health` on a port gets adopted.

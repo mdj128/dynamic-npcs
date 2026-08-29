@@ -86,9 +86,10 @@ namespace DynamicNpcs.Editor
             }
             catch (Exception e)
             {
-                Status = "Bake failed: " + e.Message;
+                string message = Explain(e.Message);
+                Status = "Bake failed: " + message;
                 Debug.LogError("[DynamicNPCs] " + Status);
-                EditorUtility.DisplayDialog("Voice bake failed", e.Message, "OK");
+                EditorUtility.DisplayDialog("Voice bake failed", message, "OK");
             }
             finally
             {
@@ -211,6 +212,38 @@ namespace DynamicNpcs.Editor
         }
 
         /// <summary>Splits launcher expressions like "py -3" into file name + prefixed args.</summary>
+        /// <summary>
+        /// Turns the more common Python stack traces into something actionable. The raw
+        /// traceback is still in the Console for anything not recognised here.
+        /// </summary>
+        private static string Explain(string raw)
+        {
+            if (raw.Contains("GatedRepoError") || raw.Contains("gated repo") ||
+                raw.Contains("Access to model neuphonic/neucodec is restricted"))
+            {
+                bool haveToken = !string.IsNullOrWhiteSpace(
+                    EditorPrefs.GetString(EmbeddedServerSetupWindow.HfTokenPrefKey, ""));
+                return
+                    "Baking needs the NeuCodec encoder, and its Hugging Face repo is gated.\n\n" +
+                    "1. Open https://huggingface.co/neuphonic/neucodec, sign in, and accept the terms.\n" +
+                    "2. Create a read token at https://huggingface.co/settings/tokens.\n" +
+                    "3. Paste it into 'HF Access Token' in Window > Dynamic NPCs > Embedded Server Setup.\n\n" +
+                    (haveToken
+                        ? "A token is set, so it was either rejected or the terms have not been accepted " +
+                          "for this account yet. Check step 1 with the same account that issued the token."
+                        : "No token is currently set.") +
+                    "\n\nThe bundled starter voices need none of this - only baking your own does.";
+            }
+
+            if (raw.Contains("torchao.dtypes.nf4tensor"))
+                return
+                    "The bake environment has an incompatible torchao. Delete " +
+                    "Library/DynamicNpcs/bake-venv and bake again to rebuild it with the pinned " +
+                    "version.\n\n" + raw;
+
+            return raw;
+        }
+
         private static ProcessStartInfo SplitLauncher(string exe, string args)
         {
             string file = exe;
@@ -220,7 +253,7 @@ namespace DynamicNpcs.Editor
                 file = exe.Substring(0, space);
                 args = exe.Substring(space + 1) + " " + args;
             }
-            return new ProcessStartInfo
+            var psi = new ProcessStartInfo
             {
                 FileName = file,
                 Arguments = args,
@@ -231,6 +264,17 @@ namespace DynamicNpcs.Editor
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8,
             };
+
+            // The NeuCodec encoder lives in a gated repo. huggingface_hub picks the token up
+            // from either of these; passing it per-process avoids touching the user's global
+            // HF login or writing the token anywhere on disk.
+            string hfToken = EditorPrefs.GetString(EmbeddedServerSetupWindow.HfTokenPrefKey, "");
+            if (!string.IsNullOrWhiteSpace(hfToken))
+            {
+                psi.Environment["HF_TOKEN"] = hfToken.Trim();
+                psi.Environment["HUGGING_FACE_HUB_TOKEN"] = hfToken.Trim();
+            }
+            return psi;
         }
     }
 }

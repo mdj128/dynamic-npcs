@@ -49,10 +49,12 @@ namespace DynamicNpcs.Editor
         private const string CodecReleasePage = "https://github.com/mdj128/dynamic-npcs/releases/tag/codec-v1";
         private const string CodecUpstreamUrl = "https://huggingface.co/neuphonic/neucodec-onnx-decoder/resolve/main/model.onnx";
         private const string CodecRepoPage = "https://huggingface.co/neuphonic/neucodec-onnx-decoder";
+        // The PyTorch encoder, pulled by Tools~/bake_neutts_voice.py when baking a custom voice.
+        private const string NeuCodecRepoPage = "https://huggingface.co/neuphonic/neucodec";
         private const string HfTokensPage = "https://huggingface.co/settings/tokens";
         // Per-machine, per-user. Deliberately NOT stored on the settings asset, which
         // would put the token in source control.
-        private const string HfTokenPrefKey = "DynamicNpcs.HuggingFaceToken";
+        internal const string HfTokenPrefKey = "DynamicNpcs.HuggingFaceToken";
         private const string NeuttsGgufPage = "https://huggingface.co/neuphonic/neutts-air-q4-gguf/tree/main";
         // Neuphonic's NeuTTS Air Q4_0 backbone, Apache-2.0, mirrored unmodified so setup
         // needs no Hugging Face account (that repo is gated too).
@@ -784,45 +786,14 @@ namespace DynamicNpcs.Editor
 
             if (_settings.neuCodecDecoder == null)
             {
-                if (!_codecUseUpstream)
-                {
-                    EditorGUILayout.HelpBox(
-                        "Downloads Neuphonic's NeuCodec decoder (Apache-2.0, ~746 MB) from this " +
-                        "package's releases, already patched for Unity's ONNX importer. No account " +
-                        "or token needed, and the file is checksum-verified after download.",
-                        MessageType.Info);
-                }
-                else
-                {
-                    EditorGUILayout.HelpBox(
-                        "Upstream is a gated repo: sign in, accept the terms on the model page, and " +
-                        "paste a read access token below. The upstream file also needs patching with " +
-                        "Tools~/patch_neucodec_onnx.py before Unity can import it.",
-                        MessageType.Warning);
-
-                    using (new EditorGUILayout.HorizontalScope())
-                    {
-                        if (GUILayout.Button("Open Model Page (accept terms)"))
-                            Application.OpenURL(CodecRepoPage);
-                        if (GUILayout.Button("Get Access Token"))
-                            Application.OpenURL(HfTokensPage);
-                    }
-
-                    using (new EditorGUILayout.HorizontalScope())
-                    {
-                        EditorGUI.BeginChangeCheck();
-                        _hfToken = EditorGUILayout.PasswordField("HF Access Token", _hfToken);
-                        if (EditorGUI.EndChangeCheck())
-                            EditorPrefs.SetString(HfTokenPrefKey, _hfToken ?? "");
-                        if (GUILayout.Button("Clear", GUILayout.Width(50)))
-                        {
-                            _hfToken = "";
-                            EditorPrefs.DeleteKey(HfTokenPrefKey);
-                            GUI.FocusControl(null);
-                        }
-                    }
-                    EditorGUILayout.LabelField(" ", "Stored in EditorPrefs on this machine only - never in the project.", EditorStyles.miniLabel);
-                }
+                EditorGUILayout.HelpBox(_codecUseUpstream
+                        ? "Upstream is a gated repo: sign in, accept the terms on the model page, and " +
+                          "paste a read access token below. The upstream file also needs patching with " +
+                          "Tools~/patch_neucodec_onnx.py before Unity can import it."
+                        : "Downloads Neuphonic's NeuCodec decoder (Apache-2.0, ~746 MB) from this " +
+                          "package's releases, already patched for Unity's ONNX importer. No account " +
+                          "or token needed, and the file is checksum-verified after download.",
+                    _codecUseUpstream ? MessageType.Warning : MessageType.Info);
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
@@ -870,7 +841,39 @@ namespace DynamicNpcs.Editor
                 }
             }
 
+            // c2) Hugging Face account - not needed for the mirrored downloads above, but
+            // baking a custom voice pulls the NeuCodec *encoder*, whose repo is gated.
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Hugging Face access (custom voices only)", EditorStyles.miniBoldLabel);
+            EditorGUILayout.HelpBox(
+                "Only needed to bake your own voice from a recording: that runs the NeuCodec " +
+                "encoder, which is a gated repo. Accept its terms once, paste a read token here, " +
+                "and 'Bake From Sample' can authenticate. The starter voices need none of this.",
+                MessageType.None);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("Open neucodec Page (accept terms)"))
+                    Application.OpenURL(NeuCodecRepoPage);
+                if (GUILayout.Button("Get Access Token"))
+                    Application.OpenURL(HfTokensPage);
+            }
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUI.BeginChangeCheck();
+                _hfToken = EditorGUILayout.PasswordField("HF Access Token", _hfToken);
+                if (EditorGUI.EndChangeCheck())
+                    EditorPrefs.SetString(HfTokenPrefKey, _hfToken ?? "");
+                if (GUILayout.Button("Clear", GUILayout.Width(50)))
+                {
+                    _hfToken = "";
+                    EditorPrefs.DeleteKey(HfTokenPrefKey);
+                    GUI.FocusControl(null);
+                }
+            }
+            EditorGUILayout.LabelField(" ", "Stored in EditorPrefs on this machine only - never in the project.", EditorStyles.miniLabel);
+
             // d) server control
+            EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("TTS server", EmbeddedTtsServer.IsRunning ? $"Running ({_settings.EmbeddedTtsRootUrl})" : "Stopped");
             using (new EditorGUILayout.HorizontalScope())
             {
