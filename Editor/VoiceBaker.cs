@@ -59,7 +59,11 @@ namespace DynamicNpcs.Editor
                     // Cheap check whether deps are already installed in the cached venv.
                     bool depsReady = await RunSilentlyAsync(VenvPython, "-c \"import neucodec, librosa\"");
                     if (!depsReady)
-                        await RunStepAsync(VenvPython, "-m pip install neucodec librosa",
+                        // torchao is pinned: neucodec asks for torchao>=0.12 with no upper
+                        // bound, but 0.18 moved NF4Tensor out of torchao.dtypes, which the
+                        // torchtune that neucodec imports still expects. Unpinned, pip picks
+                        // 0.18 and the bake dies on "No module named torchao.dtypes.nf4tensor".
+                        await RunStepAsync(VenvPython, "-m pip install neucodec librosa \"torchao<0.18\"",
                             "Installing neucodec + librosa (one-time, downloads PyTorch - several minutes)...", cts);
 
                     await RunStepAsync(VenvPython,

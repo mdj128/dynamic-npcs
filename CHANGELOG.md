@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.3] - 2026-08-29
+
+- Fix: voice baking failed with `ModuleNotFoundError: No module named
+  'torchao.dtypes.nf4tensor'`. `neucodec` declares `torchao>=0.12.0` with no upper bound,
+  so pip installed 0.18.0, which moved `NF4Tensor` out of `torchao.dtypes` - where the
+  `torchtune` that `neucodec` imports still expects it. The venv provisioning now installs
+  `torchao<0.18`. Existing broken venvs repair themselves on the next bake, since the
+  import check fails and the pinned install re-runs.
+
 ## [0.4.2] - 2026-08-29
 
 - Fix: "No matching builds found for this platform" when downloading the server binary.

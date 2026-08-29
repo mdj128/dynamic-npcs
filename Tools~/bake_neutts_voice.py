@@ -6,7 +6,11 @@ asset via its inspector ("Import NeuTTS Reference...").
 
 Requires the NeuCodec *encoder*, which currently only exists in PyTorch:
 
-    pip install neucodec librosa
+    pip install neucodec librosa "torchao<0.18"
+
+(torchao is pinned: neucodec asks for torchao>=0.12 with no upper bound, but
+0.18 moved NF4Tensor out of torchao.dtypes, where the torchtune that neucodec
+imports still looks for it.)
 
 Usage:
     python bake_neutts_voice.py <sample.wav> <transcript.txt|"transcript text"> <out.json>

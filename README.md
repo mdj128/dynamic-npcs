@@ -39,12 +39,12 @@ baked voice codes ──► NeuTTS (llama-server #2, CPU, --special) ──► s
 https://github.com/mdj128/dynamic-npcs.git
 ```
 
-To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.4.2`
+To pin a version, append a tag: `https://github.com/mdj128/dynamic-npcs.git#v0.4.3`
 
 Or add it to `Packages/manifest.json` directly:
 
 ```json
-"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.4.2"
+"com.mdj.dynamicnpcs": "https://github.com/mdj128/dynamic-npcs.git#v0.4.3"
 ```
 
 Git URL installs need [Git](https://git-scm.com/) on your PATH and a restart of Unity if it
@@ -183,6 +183,7 @@ Full detail, with links and source offers, in [THIRD-PARTY-NOTICES.md](THIRD-PAR
 - **`InvalidProtocolBufferException: Protocol message contained a tag with an invalid wire type`** — the `.onnx` on disk is not a model, but Hugging Face's gate page saved under the `.onnx` name by a pre-0.3.5 version of this package. Use *Delete Broken File* in the setup window and download again; the current download needs no account, is validated before it reaches your `Assets` folder, and is checksum-verified.
 - **"SplitToSequence not supported" importing the codec ONNX** — you have Neuphonic's original file; Unity's ONNX importer doesn't support the sequence ops its export uses for attention `unbind`. Either download the pre-patched copy (untick *Fetch from upstream Hugging Face*), or run `Tools~/patch_neucodec_onnx.py` on your file (one-time, dev machine only: `pip install onnx`; rewrites them to equivalent `Gather` ops — verified bit-exact) and use **Reimport + Reassign Codec Decoder**.
 - **"llama-server exited during startup"** — see the log view; usual suspects: corrupt GGUF, not enough VRAM (lower `Gpu Layers`), CUDA build missing cudart.
+- **Bake fails with `ModuleNotFoundError: No module named 'torchao.dtypes.nf4tensor'`** — a dependency conflict in the bake venv: `neucodec` requires `torchao>=0.12` with no upper bound, and 0.18 moved `NF4Tensor` out of `torchao.dtypes`, where `torchtune` still looks for it. 0.4.3+ pins `torchao<0.18`; an already-broken venv repairs itself on the next bake (the import check fails, so the pinned install re-runs). To force a clean rebuild, delete `Library/DynamicNpcs/bake-venv`.
 - **Voice sounds wrong / robotic** — reference quality matters most: 3–15 s, clean, mono, natural speech, accurate transcript.
 - **Port conflicts** — LLM (8090) and TTS (8091) ports must differ; whatever answers `/health` on a port gets adopted.
 
